@@ -15,6 +15,12 @@ jobs:
     - uses: cachix/install-nix-action@08dcb3a5e62fa31e2da3d490afc4176ef55ecd72 # v30
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
+    # Derive the image repo from the repository slug so this fork publishes to
+    # its own GHCR namespace rather than upstream's. GHCR requires a lowercase
+    # path, and the owner as spelled on GitHub is not necessarily lowercase.
+    - name: "Resolve image repo"
+      run: |
+        echo "IMAGE_REPO=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
     - name: "Basic CLI and web build"
       run: |
         nix build .#tclip .#tclipd
@@ -23,7 +29,7 @@ jobs:
         nix develop --command -- go test ./...
     - name: "Docker image build (dry run)"
       run: |
-        nix develop --command -- mkctr --gopaths="./cmd/tclipd:/bin/tclipd" --tags="latest" --base="gcr.io/distroless/static" --repos=ghcr.io/tailscale-dev/tclip --ldflags="-w -s" -- /bin/tclipd
+        nix develop --command -- mkctr --gopaths="./cmd/tclipd:/bin/tclipd" --tags="latest" --base="gcr.io/distroless/static" --repos="$IMAGE_REPO" --ldflags="-w -s" -- /bin/tclipd
     - name: "docker login"
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
       if: "github.event_name == 'push' && github.ref_name == 'main'"
@@ -34,7 +40,7 @@ jobs:
     - name: "Docker image push"
       if: "github.event_name == 'push' && github.ref_name == 'main'"
       run: |
-        nix develop --command -- mkctr --gopaths="./cmd/tclipd:/bin/tclipd" --tags="latest" --base="gcr.io/distroless/static" --repos=ghcr.io/tailscale-dev/tclip --push --ldflags="-w -s" -- /bin/tclipd
+        nix develop --command -- mkctr --gopaths="./cmd/tclipd:/bin/tclipd" --tags="latest,${{ github.sha }}" --base="gcr.io/distroless/static" --repos="$IMAGE_REPO" --push --ldflags="-w -s" -- /bin/tclipd
     - name: "Portable service build"
       run: |
         nix build .#portable-service
